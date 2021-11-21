@@ -1,17 +1,22 @@
 import torch
-import torchvision
 import torch.nn as nn
+import torchmetrics as tm
 import torch.nn.functional as F
 import pytorch_lightning as pl
 
-from torch.optim import Adam
-from torch.utils.data import DataLoader
+from torch.optim import Adam, SGD
 from pytorch_lightning.trainer import Trainer
+from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
+from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from cifar10_datamodule import Cifar10DataModule
 
 
-learning_rate = 3e-4
-max_epochs = 10
-batch_size = 32
+learning_rate = 0.1
+momentum = 0.9
+weight_decay = 1e-4
+max_epochs = 30
+batch_size = 64
 
 class residual_block(nn.Module):
     def __init__(self, in_channels, intermediate_channels, identity_block=None, stride=1):
@@ -62,6 +67,9 @@ class ResNet(pl.LightningModule):
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.flatten = nn.Flatten()
         self.output = nn.Linear(2048, classes)
+        self.val_accuracy = tm.Accuracy()
+        self.test_accuracy = tm.Accuracy()
+        self.train_accuracy = tm.Accuracy()
 
     def forward(self, x):
         x = self.conv1(x)
@@ -99,34 +107,59 @@ class ResNet(pl.LightningModule):
         return nn.Sequential(*blocks)
 
     def configure_optimizers(self):
-        return Adam(self.parameters(), lr=learning_rate)
+        optimizer= SGD(self.parameters(), lr=learning_rate, weight_decay=weight_decay, momentum=momentum)
+        lr_scheduler = ReduceLROnPlateau(optimizer, verbose=True, mode='min', patience=2)
+        return { "optimizer": optimizer, "lr_scheduler": lr_scheduler, "monitor":  "val_accuracy"}
 
     def training_step(self, batch, batch_idx):
         images, labels = batch
         outputs = self(images)
         loss = F.cross_entropy(outputs, labels)
+        outputs = torch.argmax(outputs, dim=-1)
+        accuracy = self.train_accuracy(outputs, labels)
         return { "loss" : loss }
 
-    def train_dataloader(self):
-        train_ds = torchvision.datasets.CIFAR10(
-            './dataset', True, transform=torchvision.transforms.ToTensor(), download=True)
-        train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=8)
-        return train_dl
+
+    def training_epoch_end(self, outputs):
+        self.log('train_accuracy', self.train_accuracy, prog_bar=True)
+
 
     def validation_step(self, batch, batch_idx):
         images, labels = batch
         outputs = self(images)
         loss = F.cross_entropy(outputs, labels)
+        outputs = torch.argmax(outputs, dim=-1)
+        accuracy = self.val_accuracy(outputs, labels)
         return { "val_loss" : loss }
 
-    def val_dataloader(self):
-        val_ds = torchvision.datasets.CIFAR10(
-            './dataset', False, transform=torchvision.transforms.ToTensor(), download=True)
-        val_dl = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=8)
-        return val_dl
+    def validation_epoch_end(self, outputs):
+        self.log('val_accuracy', self.val_accuracy, prog_bar=True)
+
+    def test_step(self, batch, batch_idx):
+        images, labels = batch
+        outputs = self(images)
+        loss = F.cross_entropy(outputs, labels)
+        outputs = torch.argmax(outputs, dim=-1)
+        accuracy = self.test_accuracy(outputs, labels)
+        return { "val_loss" : loss }
+
+    def test_epoch_end(self, outputs):
+        self.log('test_accuracy', self.test_accuracy, prog_bar=True)
+
+
 
 
 if  __name__ == "__main__":
-    model = ResNet(3, 10)
-    trainer =  Trainer(fast_dev_run=False)
-    trainer.fit(model)
+    cfm = Cifar10DataModule(batch_size=batch_size)
+    model = ResNet(in_dim=3, classes=10)
+    ### Log metric progression
+    logger = TensorBoardLogger('logs', name='regnet_logs')
+
+    ### Callbacks
+    stop_early = EarlyStopping(monitor='val_accuracy', patience=3)
+
+    trainer = Trainer(
+        gpus=0, fast_dev_run=True,
+        logger=logger,max_epochs=max_epochs,
+    )
+    trainer.fit(model, cfm)
