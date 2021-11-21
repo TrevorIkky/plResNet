@@ -12,7 +12,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from cifar10_datamodule import Cifar10DataModule
 
 
-learning_rate = 0.1
+learning_rate = 0.01
 momentum = 0.9
 weight_decay = 1e-4
 max_epochs = 30
