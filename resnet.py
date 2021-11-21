@@ -23,11 +23,11 @@ class residual_block(nn.Module):
         super(residual_block, self).__init__()
         self.intermediate_channels = intermediate_channels
         self.relu = nn.ReLU()
-        self.conv1 = nn.Conv2d(in_channels, intermediate_channels, kernel_size=1, stride=1)
+        self.conv1 = nn.Conv2d(in_channels, intermediate_channels, kernel_size=1, stride=1, bias=False)
         self.bn1 = nn.BatchNorm2d(intermediate_channels)
-        self.conv2 = nn.Conv2d(intermediate_channels, intermediate_channels, kernel_size=3, padding=1, stride=stride)
+        self.conv2 = nn.Conv2d(intermediate_channels, intermediate_channels, kernel_size=3, padding=1, stride=stride, bias=False)
         self.bn2 = nn.BatchNorm2d(intermediate_channels)
-        self.conv3 = nn.Conv2d(intermediate_channels, intermediate_channels * 4, kernel_size=1, stride=1)
+        self.conv3 = nn.Conv2d(intermediate_channels, intermediate_channels * 4, kernel_size=1, stride=1, bias=False)
         self.bn3 = nn.BatchNorm2d(intermediate_channels * 4)
         self.identity_block = identity_block
     def forward(self, x):
@@ -56,7 +56,7 @@ class ResNet(pl.LightningModule):
         self.in_dim = in_dim
         self.layers = layers
         self.classes = classes
-        self.conv1 = nn.Conv2d(in_dim, self.in_channels, kernel_size=7, padding=3, bias=False)
+        self.conv1 = nn.Conv2d(in_dim, self.in_channels, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(self.in_channels)
         self.relu = nn.ReLU()
         self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
@@ -95,7 +95,7 @@ class ResNet(pl.LightningModule):
 
         if stride != 1 or self.in_channels != channels:
             identity_block = nn.Sequential(
-                nn.Conv2d(self.in_channels, channels * 4, kernel_size=1, stride=stride),
+                nn.Conv2d(self.in_channels, channels * 4, kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(channels * 4)
             )
         """Downsampling performed by block_3_1, block_4_1, block_5_1 with a stride of 2"""
