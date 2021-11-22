@@ -16,7 +16,7 @@ learning_rate = 0.01
 momentum = 0.9
 weight_decay = 1e-4
 max_epochs = 30
-batch_size = 64
+batch_size = 32
 
 class residual_block(nn.Module):
     def __init__(self, in_channels, intermediate_channels, identity_block=None, stride=1):
@@ -41,7 +41,8 @@ class residual_block(nn.Module):
         x = self.conv3(x)
         x = self.bn3(x)
         if self.identity_block is not None:
-            x += self.identity_block(y)
+            y += self.identity_block(y)
+        x += y
         return self.relu(x)
 
 
@@ -114,6 +115,7 @@ class ResNet(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         images, labels = batch
         outputs = self(images)
+        #print(f'Preds shape:{outputs} \n Labels: {labels}')
         loss = F.cross_entropy(outputs, labels)
         outputs = torch.argmax(outputs, dim=-1)
         accuracy = self.train_accuracy(outputs, labels)
