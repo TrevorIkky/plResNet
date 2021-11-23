@@ -140,8 +140,6 @@ class ResNet(pl.LightningModule):
 
 
     def training_epoch_end(self, outputs):
-        avg_loss = torch.stack([x["loss"] for x in outputs]).mean()
-        self.log('train_loss', avg_loss)
         self.log('train_accuracy', self.train_accuracy, prog_bar=True)
 
 
@@ -154,6 +152,8 @@ class ResNet(pl.LightningModule):
         return { "val_loss" : loss }
 
     def validation_epoch_end(self, outputs):
+        avg_loss = torch.stack([x["val_loss"] for x in outputs]).mean()
+        self.log('val_loss', avg_loss)
         self.log('val_accuracy', self.val_accuracy, prog_bar=True)
 
     def test_step(self, batch, batch_idx):
@@ -186,7 +186,7 @@ def train_resnet(config, num_epochs=10, num_gpus=1):
     #Tune callback
     tune_report = TuneReportCallback({ "loss": "val_loss", "val_accuracy": "val_accuracy"}, on="validation_end")
     tune_report_ckpt = TuneReportCheckpointCallback(
-        metrics={ "loss": "train_loss", "val_accuracy": "val_accuracy"},
+        metrics={ "val_loss": "val_loss", "val_accuracy": "val_accuracy"},
         filename="tune_last_ckpt", on="validation_end"
     )
 
@@ -211,7 +211,7 @@ def TuneAsha(train_fn, model:str, num_samples:int=10, num_epochs:int=10, cpus_pe
 
     reporter = CLIReporter(
         parameter_columns=["lr", "batch_size", "weight_decay"],
-        metric_columns=["loss", "val_accuracy", "training_iteration"]
+        metric_columns=["val_loss", "val_accuracy", "training_iteration"]
     )
 
     analysis = tune.run(
@@ -223,7 +223,7 @@ def TuneAsha(train_fn, model:str, num_samples:int=10, num_epochs:int=10, cpus_pe
             "cpu": cpus_per_trial,
             "gpu": gpus_per_trial
         },
-        metric="loss", mode="min", config=config,
+        metric="val_loss", mode="min", config=config,
         num_samples=num_samples, scheduler=scheduler, progress_reporter=reporter, name=f"tune_{model}_asha"
     )
     print("Best hyperparameters found were: ", analysis.best_config)
@@ -248,7 +248,7 @@ def TunePBT(train_fn, model:str, num_samples:int=10, num_epochs:int=10, cpus_per
 
     reporter = CLIReporter(
         parameter_columns=["lr", "batch_size", "weight_decay"],
-        metric_columns=["loss", "val_accuracy", "training_iteration"])
+        metric_columns=["val_loss", "val_accuracy", "training_iteration"])
 
     analysis = tune.run(
         tune.with_parameters(
@@ -259,7 +259,7 @@ def TunePBT(train_fn, model:str, num_samples:int=10, num_epochs:int=10, cpus_per
             "cpu": cpus_per_trial,
             "gpu": gpus_per_trial
         },
-        metric="loss", mode="min", config=config,
+        metric="val_loss", mode="min", config=config,
         num_samples=num_samples, scheduler=scheduler, progress_reporter=reporter, name=f"{model}_asha"
     )
     print("Best hyperparameters found were: ", analysis.best_config)
@@ -270,7 +270,6 @@ def TunePBT(train_fn, model:str, num_samples:int=10, num_epochs:int=10, cpus_per
 
 
 if  __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
     parser.add_argument('--tune', help='Find hyperparameter values', action='store_true')
     args = parser.parse_args()
